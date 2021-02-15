@@ -1,0 +1,141 @@
+<pre>
+  OBPP-05
+  Title: Reusable Payment Codes for Hierarchical Deterministic Wallets, version 3
+  Author: Justus Ranvier <justus@openbitcoinprivacyproject.org>
+  Status: Draft
+  Created: 2021-02-15
+</pre>
+
+
+==Abstract==
+
+This RFC extends reusable payment codes as defined by BIP-47 by defining version 3 payment codes.
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
+
+
+==Copyright==
+
+This RFC is in the public domain.
+
+
+==Motivations==
+
+Version 3 payment codes address two shortcomings of previous payment code versions:
+
+* Key reuse will occur if the same payment code is used to receive transactions on more than one blockchain.
+* Both version 1 and version 2 notification transactions both require the use of an OP_RETURN output, which limits the number of notifications which can be performed by a standard transaction to one.
+
+
+== Specification ==
+
+Version 3 payment codes behave identically to version 1 and version 2 payment codes as defined in BIP-47 except where noted below.
+
+==Path levels==
+
+===Coin type===
+
+Wallets which only support one coin type and use BIP-44 SHOULD set this value per BIP-44.
+
+Wallets which support multiple coin types and do not use version 3 payment codes SHOULD create a different payment code for each coin type and set this value per BIP-44.
+
+Wallets which support version 3 payment codes should use one payment code per logical user identity regardless of the number of coin types the wallet supports and SHOULD set this value to 0'.
+
+Hardened derivation is used at this level.
+
+==Versions==
+
+* Version 1
+** Address type: P2PKH
+** Notification type: address
+* Version 2
+** Address type: P2PKH
+** Notification type: bloom-multisig
+* Version 3
+** Address type: varied, see Payment Output Scripts
+** Notification type: cfilter-multisig
+
+==Version 3==
+
+===Representation===
+
+====Binary Serialization====
+
+* Byte 0: version. required value: 0x03
+
+===Protocol===
+
+====Definitions====
+
+* Payment code identifier (version 3): a 32 byte representation of a payment code consisting of the SHA256 hash of bytes 2 through 66 of the binary serialization of the payment code
+
+====Notification Output====
+
+Note: this procedure is used if Bob uses a version 3 payment code (regardless of the the version of Alice's payment code). If Bob's payment code is not version 3, see the appropriate section of BIP-47.
+
+Version 3 notifications are self-contained to a single transaction output, therefore MAY be included as part of any transaction, whether related to the recipient of the notification or not.
+
+# Notification outputs consist of a 1 of 3 bare multisig script.
+# Required components:
+## The pubkey corresponding to the next change address in Alice's wallet, MUST be in compressed form
+## Alice's blinded payment code
+### Blind the payment code as per the version 1 procedure, except use the change address pubkey for Alice's contribution to the ECDH calculation.
+# Alice's blinded payment code and Bob's payment code identifier are formatted as public keys which MUST be in uncompressed form as follows:
+## first uncompressed pubkey:
+### Byte 0: 0x04
+### Byte 1-32: Bob's payment code identifier
+### Byte 33-64: bytes 0 through 31 of Alice's blinded payment code
+## second uncompressed pubkey:
+### Byte 0: 0x04
+### Byte 1-48: bytes 32 through 79 of Alice's blinded payment code
+### Byte 49-64: arbitrary, MAY be set to any value
+
+<pre>OP_1 <change address pubkey> <first uncompressed pubkey> <second uncompressed pubkey> OP_3 OP_CHECKMULTISIG</pre>
+
+The relative ordering of the keys in the above script MAY be randomized.
+
+The recommended method for detecting incoming notification transactions is to use BIP-157 client-side filtering with OBPP-4 Enhanced Selectivity filters. Bob detects notification transactions by adding his payment code identifier to the set of elements to be matched.
+
+# When the cfilter returns a notification transaction, the sender's payment code is unblinded using the same procedure as for version 1 notification transactions except the compressed pubkey in the script is the one used for Alice's contribution to the ECDH calculation.
+
+Alice's wallet should spend the notification change output at the next appropriate opportunity.
+
+Wallets SHOULD prefer to create of notification outputs in any situation where a change output is required, if the wallet knows of the existence of any payment codes but has not yet sent a notification. The practice of preemptive notification makes assumptions about the relationship between a notification output and the transaction in which it is contained invalid, therefore wallets which practice preemptive notification MAY include the notification output with the first payment to a new transaction recipient.
+
+====Sending====
+
+# Prior to this prodcedure, Alice MUST ensure that Bob is capable of accepting payments on the blockchain to be used via a suitable method. Such methods are outside the scope of this specification.
+# Each time Alice wants to initiate a transaction to Bob, Alice derives a unique public key for the transaction using ECDH as follows:
+## Alice selects the 0th private key derived from her payment code: <pre>a</pre>
+## Alice selects the next unused public key derived from Bob's payment code, starting from zero: <pre>B, where B = bG</pre>
+### The "next unused" public key is based on an index specific to the Alice-Bob context, not global to either Alice or Bob
+## Alice selects the 4 byte registered coin type for the transaction based on SLIP-0044: <pre>t</pre>
+## Alice calculates a secret point: <pre>S = aB</pre>
+## Alice calculates a scalar shared secret using the x value of S: <pre>s = SHA256(HMAC-SHA512(Sx, t))</pre>
+### If the value of s is not in the secp256k1 group, Alice MUST increment the index used to derive Bob's public key and try again.
+## Alice uses the scalar shared secret to calculate the ephemeral public key used to generate the payment output script for this transaction: <pre>B' = B + sG</pre>
+# Bob is watching for incoming payments on B' ever since he received the notification transaction from Alice.
+## Bob calculates n shared secrets with Alice, using the 0<sup>th</sup> public key derived from Alice's payment code, and private keys 0 - n derived from Bob's payment code, where n is his desired lookahead window.
+## Bob calculates the ephemeral deposit addresses using the same procedure as Alice: <pre>B' = B + sG</pre>
+## Bob calculate the private key for each ephemeral address as: <pre>b' = b + s</pre>
+
+====Payment Output Scripts====
+
+The pubkeys derived by the above procedure MAY be used to generate any of the following output script types. Receiving wallets SHOULD monitor for all applicable types:
+
+* Pay to pubkey (P2PK)
+* Pay to pubkey hash (P2PKH)
+* Either of the above scripts in pay to script hash form (P2SH)
+* On chains which support segwit: P2WPKH and P2WSH (P2PKH and P2PK)
+
+P2PK scripts SHOULD be preferred where practical. Script types which use 20 byte hashes and derived public keys are less secure than 32 byte public keys or non-derived public keys because the sender of a payment only requires 2<sup>80</sup> attempts on average to generate a public key or script hash with a colliding 20 byte hash.
+
+Outputs that are held in insecure (20 byte hash) scripts SHOULD be swept to secure scripts if the value of the output is large enough to make a 2<sup>80</sup> work attack profitable.
+
+==Reference==
+
+* [[obpp-04.mediawiki|OBPP-04: Enhanced Selectivity Compact Block Filters]]
+* [[https://github.com/bitcoin/bips/bip-0047.mediawiki|BIP-0047: Reusable Payment Codes for Hierarchical Deterministic Wallets]]
+* [[https://github.com/bitcoin/bips/bip-0147.mediawiki|BIP-0147: Transaction Signature Verification for Version 0 Witness Program]]
+* [[https://github.com/bitcoin/bips/bip-0157.mediawiki|BIP-0157: Client Side Block Filtering]]
+* [[https://github.com/satoshilabs/slips/blob/master/slip-0044.md|SLIP-0044: Registered coin types for BIP-0044]]
