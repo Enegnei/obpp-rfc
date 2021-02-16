@@ -137,5 +137,5 @@ Outputs that are held in insecure (20 byte hash) scripts SHOULD be swept to secu
 * [[obpp-04.mediawiki|OBPP-04: Enhanced Selectivity Compact Block Filters]]
 * [[https://github.com/bitcoin/bips/blob/master/bip-0047.mediawiki|BIP-0047: Reusable Payment Codes for Hierarchical Deterministic Wallets]]
 * [[https://github.com/bitcoin/bips/blob/master/bip-0147.mediawiki|BIP-0147: Transaction Signature Verification for Version 0 Witness Program]]
-* [[https://github.com/bitcoin/bips/bip-0157.mediawiki|BIP-0157: Client Side Block Filtering]]
+* [[https://github.com/bitcoin/bips/blob/master/bip-0157.mediawiki|BIP-0157: Client Side Block Filtering]]
 * [[https://github.com/satoshilabs/slips/blob/master/slip-0044.md|SLIP-0044: Registered coin types for BIP-0044]]
